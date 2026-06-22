@@ -1,76 +1,92 @@
-// ex03.ino
-// SOS 求救信号（摩斯码），使用 millis() 实现
-
+// ex03.ino 修复版 SOS摩斯码 非阻塞millis实现
 const int ledPin = 2;
-unsigned long prevMs = 0;
 
-// 摩斯码时间（单位：ms）
-const int dot = 200;     // 短亮
-const int dash = 600;    // 长亮
-const int gap = 200;     // 符号间隔
-const int charGap = 500; // 字母间隔
-const int wordGap = 2000;// 完整SOS后停顿
+// 摩斯码标准时间参数(ms)
+const int DOT_ON  = 200;    // 短亮
+const int DASH_ON = 600;    // 长亮
+const int SYM_GAP = 200;    // 单个点/划之间熄灭间隔
+const int CHAR_GAP = 500;   // 字母之间间隔(S-O、O-S)
+const int WORD_GAP = 2000;  // 完整SOS一轮后的长停顿
 
-// 状态机定义
-enum State {
-  S1_DOT1, S1_DOT2, S1_DOT3,
-  O1_DASH1, O1_DASH2, O1_DASH3,
-  S2_DOT1, S2_DOT2, S2_DOT3,
-  WAIT
+// 设备状态
+enum LedState {
+  IDLE,       // 熄灭等待
+  DOT_LIGHT,  // 短亮阶段
+  DASH_LIGHT, // 长亮阶段
+  SYM_WAIT,   // 符号熄灭间隔
+  CHAR_WAIT,  // 字母熄灭间隔
+  WORD_WAIT   // 一轮SOS结束长等待
 };
+LedState curState = WORD_WAIT;
 
-State state = S1_DOT1;
+// SOS序列定义：0=短点，1=长划
+int sosSeq[] = {0,0,0, 1,1,1, 0,0,0};
+int seqIndex = 0; // 当前执行到序列第几位
+unsigned long timeStamp = 0;
 
 void setup() {
   pinMode(ledPin, OUTPUT);
+  digitalWrite(ledPin, LOW);
 }
 
 void loop() {
   unsigned long now = millis();
+  unsigned long delta = now - timeStamp;
 
-  switch (state) {
-    // S: ...
-    case S1_DOT1: doDot(now, S1_DOT2); break;
-    case S1_DOT2: doDot(now, S1_DOT3); break;
-    case S1_DOT3: doDot(now, O1_DASH1); break;
-
-    // O: ---
-    case O1_DASH1: doDash(now, O1_DASH2); break;
-    case O1_DASH2: doDash(now, O1_DASH3); break;
-    case O1_DASH3: doDash(now, S2_DOT1); break;
-
-    // S: ...
-    case S2_DOT1: doDot(now, S2_DOT2); break;
-    case S2_DOT2: doDot(now, S2_DOT3); break;
-    case S2_DOT3: doDot(now, WAIT); break;
-
-    // 停顿后重新开始
-    case WAIT:
+  switch(curState)
+  {
+    case WORD_WAIT:
       digitalWrite(ledPin, LOW);
-      if (now - prevMs >= wordGap) {
-        state = S1_DOT1;
-        prevMs = now;
+      if(delta >= WORD_GAP){
+        seqIndex = 0;
+        timeStamp = now;
+        // 第一个符号：短点
+        curState = DOT_LIGHT;
       }
       break;
-  }
-}
 
-// 短亮
-void doDot(unsigned long now, State next) {
-  digitalWrite(ledPin, HIGH);
-  if (now - prevMs >= dot) {
-    digitalWrite(ledPin, LOW);
-    prevMs = now;
-    state = next;
-  }
-}
+    case DOT_LIGHT:
+      digitalWrite(ledPin, HIGH);
+      if(delta >= DOT_ON){
+        digitalWrite(ledPin, LOW);
+        timeStamp = now;
+        curState = SYM_WAIT;
+      }
+      break;
 
-// 长亮
-void doDash(unsigned long now, State next) {
-  digitalWrite(ledPin, HIGH);
-  if (now - prevMs >= dash) {
-    digitalWrite(ledPin, LOW);
-    prevMs = now;
-    state = next;
+    case DASH_LIGHT:
+      digitalWrite(ledPin, HIGH);
+      if(delta >= DASH_ON){
+        digitalWrite(ledPin, LOW);
+        timeStamp = now;
+        curState = SYM_WAIT;
+      }
+      break;
+
+    case SYM_WAIT:
+      if(delta >= SYM_GAP){
+        seqIndex++;
+        timeStamp = now;
+        // 判断是否切换字母
+        if(seqIndex == 3 || seqIndex == 6){
+          curState = CHAR_WAIT;
+        }else if(seqIndex >= 9){
+          // 整套SOS播放完成，进入长等待
+          curState = WORD_WAIT;
+        }else{
+          // 下一个符号：短/长
+          if(sosSeq[seqIndex] == 0) curState = DOT_LIGHT;
+          else curState = DASH_LIGHT;
+        }
+      }
+      break;
+
+    case CHAR_WAIT:
+      if(delta >= CHAR_GAP){
+        timeStamp = now;
+        if(sosSeq[seqIndex] == 0) curState = DOT_LIGHT;
+        else curState = DASH_LIGHT;
+      }
+      break;
   }
 }
