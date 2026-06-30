@@ -1,92 +1,77 @@
-// ex03.ino 修复版 SOS摩斯码 非阻塞millis实现
-const int ledPin = 2;
+#include <WiFi.h>
+#include <WebServer.h>
 
-// 摩斯码标准时间参数(ms)
-const int DOT_ON  = 200;    // 短亮
-const int DASH_ON = 600;    // 长亮
-const int SYM_GAP = 200;    // 单个点/划之间熄灭间隔
-const int CHAR_GAP = 500;   // 字母之间间隔(S-O、O-S)
-const int WORD_GAP = 2000;  // 完整SOS一轮后的长停顿
+//const char* ssid = "ESP32-LAB092";
+//const char* password = "12345678";
+const char* ap_ssid = "ESP32-LAB092";
+const char* ap_pass = "12345678"; // 至少8位
+const int LED_PIN = 2; // D2 常见为 GPIO2
 
-// 设备状态
-enum LedState {
-  IDLE,       // 熄灭等待
-  DOT_LIGHT,  // 短亮阶段
-  DASH_LIGHT, // 长亮阶段
-  SYM_WAIT,   // 符号熄灭间隔
-  CHAR_WAIT,  // 字母熄灭间隔
-  WORD_WAIT   // 一轮SOS结束长等待
-};
-LedState curState = WORD_WAIT;
+WebServer server(80);
 
-// SOS序列定义：0=短点，1=长划
-int sosSeq[] = {0,0,0, 1,1,1, 0,0,0};
-int seqIndex = 0; // 当前执行到序列第几位
-unsigned long timeStamp = 0;
+String makePage() {
+  String state = digitalRead(LED_PIN) ? "ON" : "OFF";
+  String html = R"rawliteral(
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>实验2</title>
+</head>
+<body style="font-family:Arial; text-align:center; margin-top:50px;">
+  <h1>第二部分：按钮控制 LED</h1>
+  <p>当前状态：<b>)rawliteral" + state + R"rawliteral(</b></p>
+  <a href="/on"><button style="padding:10px 20px;">点亮 LED</button></a>
+  <a href="/off"><button style="padding:10px 20px;">熄灭 LED</button></a>
+</body>
+</html>
+)rawliteral";
+  return html;
+}
+
+void handleRoot() {
+  server.send(200, "text/html; charset=UTF-8", makePage());
+}
+
+void handleOn() {
+  digitalWrite(LED_PIN, HIGH);
+  server.sendHeader("Location", "/");
+  server.send(303);
+}
+
+void handleOff() {
+  digitalWrite(LED_PIN, LOW);
+  server.sendHeader("Location", "/");
+  server.send(303);
+}
 
 void setup() {
-  pinMode(ledPin, OUTPUT);
-  digitalWrite(ledPin, LOW);
+  Serial.begin(115200);
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, LOW);
+  
+  //WiFi.begin(ssid, password);
+  //Serial.print("连接WiFi");
+  //while (WiFi.status() != WL_CONNECTED) {
+    //delay(500);
+   // Serial.print(".");
+  //}
+  //Serial.println("\n连接成功");
+  //Serial.print("访问地址: http://");
+  //Serial.println(WiFi.localIP());
+WiFi.mode(WIFI_AP);
+WiFi.softAP(ap_ssid, ap_pass);
+
+Serial.println("AP已开启");
+Serial.print("AP IP: ");
+Serial.println(WiFi.softAPIP()); // 通常 192.168.4.1
+  server.on("/", handleRoot);
+  server.on("/on", handleOn);
+  server.on("/off", handleOff);
+  server.begin();
 }
 
 void loop() {
-  unsigned long now = millis();
-  unsigned long delta = now - timeStamp;
-
-  switch(curState)
-  {
-    case WORD_WAIT:
-      digitalWrite(ledPin, LOW);
-      if(delta >= WORD_GAP){
-        seqIndex = 0;
-        timeStamp = now;
-        // 第一个符号：短点
-        curState = DOT_LIGHT;
-      }
-      break;
-
-    case DOT_LIGHT:
-      digitalWrite(ledPin, HIGH);
-      if(delta >= DOT_ON){
-        digitalWrite(ledPin, LOW);
-        timeStamp = now;
-        curState = SYM_WAIT;
-      }
-      break;
-
-    case DASH_LIGHT:
-      digitalWrite(ledPin, HIGH);
-      if(delta >= DASH_ON){
-        digitalWrite(ledPin, LOW);
-        timeStamp = now;
-        curState = SYM_WAIT;
-      }
-      break;
-
-    case SYM_WAIT:
-      if(delta >= SYM_GAP){
-        seqIndex++;
-        timeStamp = now;
-        // 判断是否切换字母
-        if(seqIndex == 3 || seqIndex == 6){
-          curState = CHAR_WAIT;
-        }else if(seqIndex >= 9){
-          // 整套SOS播放完成，进入长等待
-          curState = WORD_WAIT;
-        }else{
-          // 下一个符号：短/长
-          if(sosSeq[seqIndex] == 0) curState = DOT_LIGHT;
-          else curState = DASH_LIGHT;
-        }
-      }
-      break;
-
-    case CHAR_WAIT:
-      if(delta >= CHAR_GAP){
-        timeStamp = now;
-        if(sosSeq[seqIndex] == 0) curState = DOT_LIGHT;
-        else curState = DASH_LIGHT;
-      }
-      break;
-  }
+  server.handleClient();
 }

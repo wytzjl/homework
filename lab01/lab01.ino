@@ -1,14 +1,19 @@
-#define LED_PIN 2
+// lab02.ino
+// ESP32 板载LED基础闪烁实验
+
+const int ledPin = 2;
 
 void setup() {
   Serial.begin(115200);
-  pinMode(LED_PIN, OUTPUT);
+  pinMode(ledPin, OUTPUT);
 }
 
 void loop() {
-  Serial.println("Hello ESP32! Lab01 completed.");
-  digitalWrite(LED_PIN, HIGH);
+  digitalWrite(ledPin, HIGH);
+  Serial.println("LED ON");
   delay(1000);
-  digitalWrite(LED_PIN, LOW);
+
+  digitalWrite(ledPin, LOW);
+  Serial.println("LED OFF");
   delay(1000);
 }
